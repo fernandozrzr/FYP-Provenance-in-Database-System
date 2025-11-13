@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>GProM Query Interface</title>
+    <script>
+        function toggleRawOutput() {
+            const engine = document.getElementById("engine").value;
+            const mode = document.getElementById("mode").value;
+            const rawOutput = document.getElementById("raw-output");
+            if (!rawOutput) return;
+
+            // Only show during provsql + semirings
+            if (engine === "provsql" && mode === "semirings") {
+                rawOutput.style.display = "block";
+            } else {
+                rawOutput.style.display = "none";
+            }
+        }
+
+        function toggleEngineModes() {
+            const engine = document.getElementById('engine').value;
+            const modeSelect = document.getElementById('mode');
+
+            Array.from(modeSelect.options).forEach(opt => {
+                const allowed = opt.dataset.engine === 'both' || opt.dataset.engine === engine;
+                opt.hidden = !allowed;
+            });
+
+            // If the selected mode is not visible, reset to the first visible option
+            if (modeSelect.selectedOptions[0].hidden) {
+                const firstVisible = Array.from(modeSelect.options).find(o => !o.hidden);
+                if (firstVisible) modeSelect.value = firstVisible.value;
+            }
+
+            toggleFields();
+            toggleRawOutput();
+        }
+
+        function toggleFields() {
+            const mode = document.getElementById('mode').value;
+
+            document.getElementById('timestamp-field').style.display = (mode === 'timestamp') ? 'block' : 'none';
+            document.getElementById('baserelation-fields').style.display = (mode === 'baserelation') ? 'block' : 'none';
+            document.getElementById('has-provenance-field').style.display = (mode === 'has_provenance') ? 'block' : 'none';
+            document.getElementById('group_by_field').style.display = (mode === 'has_provenance' || mode === 'use_provenance') ? 'block' : 'none';
+            document.getElementById('use-provenance-field').style.display = (mode === 'use_provenance') ? 'block' : 'none';
+            document.getElementById('semirings-fields').style.display = (mode === 'semirings') ? 'block' : 'none';
+
+            // New fields
+            document.getElementById('where-provenance-fields').style.display = (mode === 'where_provenance') ? 'block' : 'none';
+            document.getElementById('probability-fields').style.display = (mode === 'probability') ? 'block' : 'none';
+
+            // Hide main query input for modes with custom fields
+            if (['baserelation', 'semirings', 'where_provenance', 'probability'].includes(mode)) {
+                document.getElementById('main-select-field').style.display = 'none';
+            } else {
+                document.getElementById('main-select-field').style.display = 'block';
+            }
+            toggleRawOutput();
+        }
+        const modeInstructions = {
+            "default": "Enter a normal SQL query and run it directly.",
+            "provenance": "Wrap your SQL query inside PROVENANCE OF (...). \n Example Input: SELECT * FROM employees",
+            "timestamp": "Use PROVENANCE AS OF TIMESTAMP with a specific time.\n Example Input:  SELECT * FROM employees\n Example Timestamp: 2013-12-01 08:00:00",
+            "baserelation": "Provide both the main SELECT and subquery fields. \n Example Main Select: SELECT * \n Example Subquery: SELECT * FROM r \n Example BASERELATION: alias1 ",
+            "has_provenance": "Enter the attributes to check provenance existence.\n Example Input: SELECT sum(a) FROM R \n Example Attributes: attribute1, [attribute2, ...] \n Example Group By: r",
+            "use_provenance": "Enter the attributes to use provenance.\n Example Input: SELECT sum(a) FROM R \n Example Attributes: attribute1, [attribute2, ...] \n Example Group By: r",
+            "reenact": "Provide a query that replays the transaction. \nExample Input: SELECT * FROM users;",
+            "reenact_provenance": "Like REENACT but includes provenance tracking. \nExample Input: SELECT * FROM users;",
+            "reenact_annotations": "Reenact transactions with annotations for debugging or change tracking. \n Example Input: UPDATE r SET b = 'f' WHERE a = 10;",
+            "add_provenance": "Add Provenance adds provenance tracking to a table. Example Input: 'personnel'",
+            "create_provenance_mapping": "Create Provenance Mapping links a provenance column to a user defined attribute create_provenance_mapping(mapping_name TEXT, table_name TEXT, column_name TEXT).\nExample Input:'name','personnel','name'",
+            "semirings": "View Semirings shows how individual tuples contribute to query results under a specific semiring, and optionally visualize the semiring graph. \nExample Table Input: 'name' \nExample Subquery Input: SELECT DISTINCT position FROM personnel",
+            "where_provenance": "This computes provenance for a query with a specific WHERE condition, showing which base tuples contribute to the results that satisfy that condition. \nExample Input: SELECT DISTINCT P1.city FROM Personnel P1 JOIN Personnel P2 ON P1.city = P2.city WHERE P1.id < P2.id",
+            "probability": "This computes the existence probability of each query result row. Possible semiring inputs: possible-worlds, monte-carlo, compilation \n Example semiring input: 'possible-worlds', ['<additional parameters>'] \nExample Query Input: SELECT DISTINCT P1.city FROM Personnel P1 JOIN Personnel P2 ON P1.city = P2.city  WHERE P1.id < P2.id"
+        }
+        function updateHowTo() {
+            const mode = document.getElementById('mode').value;
+            const box = document.getElementById('howto-box');
+            const text = document.getElementById('howto-text');
+
+            if (modeInstructions[mode]) {
+                box.style.display = 'block';
+                text.innerText = modeInstructions[mode];
+            } else {
+                box.style.display = 'none';
+                text.innerText = '';
+            }
+        }
+
+        function toggleGenerateImageButton() {
+            const engine = document.getElementById('engine').value;
+            const mode = document.getElementById('mode').value;
+            const generateBtn = document.querySelector('input[value="Generate Image"]');
+            const viewCircuitBtn = document.querySelector('input[value="View Circuit"]');
+
+            if (engine === 'gprom' || (engine === 'provsql' && mode === 'semirings')) {
+                if (engine === 'provsql' && mode === 'semirings') {
+                    viewCircuitBtn.style.display = 'inline-block';
+                } else {
+                    viewCircuitBtn.style.display = 'none';
+                }
+                generateBtn.style.display = 'inline-block';
+            } else {
+                generateBtn.style.display = 'none';
+            }
+        }
+
+
+        const originalToggleFields = toggleFields;
+        toggleFields = function () {
+            originalToggleFields();
+            updateHowTo();
+            toggleGenerateImageButton();
+        };
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+
+        textarea,
+        input[type=text],
+        select {
+            font-family: monospace;
+            font-size: 14px;
+            padding: 8px;
+            width: 600px;
+            max-width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        input[type=submit] {
+            padding: 10px 20px;
+            background-color: #0066cc;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+
+        input[type=submit]:hover {
+            background-color: #004999;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        pre {
+            background-color: #eee;
+            color: #333;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        h2 {
+            margin-top: 40px;
+            color: #0066cc;
+        }
+
+        #resultTable {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: "Courier New", Courier, monospace;
+            /* SQL-like */
+            font-size: 14px;
+        }
+
+        #resultTable th,
+        #resultTable td {
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            /* subtle separator for rows */
+        }
+
+        #resultTable th {
+            background-color: rgba(0, 0, 0, 0.03);
+            /* very light header bg */
+            font-weight: bold;
+            text-align: left;
+            border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+            /* subtle header line */
+        }
+
+        #resultTable tbody tr:nth-child(even) {
+            background-color: rgba(0, 0, 0, 0.02);
+            /* subtle alternating row shading */
+        }
+
+        /* Filter inputs */
+        .filter {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            border-radius: 3px;
+            padding: 2px 4px;
+            width: 95%;
+            background-color: rgba(0, 0, 0, 0.02);
+            color: #333;
+        }
+
+        .filter:focus {
+            outline: none;
+            border-color: rgba(0, 102, 204, 0.7);
+            background-color: rgba(0, 102, 204, 0.05);
+        }
+    </style>
+
+</head>
+
+<body onload="toggleEngineModes(); updateHowTo();paginateTable();">
+    <h1>Run SQL with GProM / ProvSQL</h1>
+    <form method="POST">
+
+        <!-- Engine Selection -->
+        <label for="engine">Engine:</label>
+        <select name="engine" id="engine" onchange="toggleEngineModes()">
+            <option value="gprom" {% if engine=='gprom' %}selected{% endif %}>GProM</option>
+            <option value="provsql" {% if engine=='provsql' %}selected{% endif %}>ProvSQL</option>
+        </select>
+        <br><br>
+
+        <!-- Execution Mode -->
+        <label for="mode">Execution Mode:</label>
+        <select name="mode" id="mode" onchange="toggleFields()">
+            <option value="default" data-engine="both" {% if mode=='default' %}selected{% endif %}>Default (normal SQL)
+            </option>
+            <option value="provenance" data-engine="gprom" {% if mode=='provenance' %}selected{% endif %}>PROVENANCE OF
+                (...)</option>
+            <option value="timestamp" data-engine="gprom" {% if mode=='timestamp' %}selected{% endif %}>PROVENANCE AS OF
+                TIMESTAMP (...)</option>
+            <option value="baserelation" data-engine="gprom" {% if mode=='baserelation' %}selected{% endif %}>PROVENANCE
+                WITH BASERELATION</option>
+            <option value="has_provenance" data-engine="gprom" {% if mode=='has_provenance' %}selected{% endif %}>HAS
+                PROVENANCE (...)</option>
+            <option value="use_provenance" data-engine="gprom" {% if mode=='use_provenance' %}selected{% endif %}>USE
+                PROVENANCE (...)</option>
+            <option value="reenact" data-engine="gprom" {% if mode=='reenact' %}selected{% endif %}>REENACT (...)
+            </option>
+            <option value="reenact_provenance" data-engine="gprom" {% if mode=='reenact_provenance' %}selected{% endif
+                %}>REENACT WITH PROVENANCE (...)</option>
+            <option value="reenact_annotations" data-engine="gprom" {% if mode=='reenact_annotations' %}selected{% endif
+                %}>REENACT + ANNOTATIONS</option>
+            <option value="add_provenance" data-engine="provsql" {% if mode=='add_provenance' %}selected{% endif %}>
+                SELECT ADD_PROVENANCE ('table1')</option>
+            <option value="create_provenance_mapping" data-engine="provsql" {% if mode=='create_provenance_mapping'
+                %}selected{% endif %}>SELECT CREATE_PROVENANCE_MAPPING ('table1', 'table2', 'table3')</option>
+            <option value="semirings" data-engine="provsql" {% if mode=='semirings' %}selected{% endif %}>SELECT *,
+                SR_FORMULA (PROVENANCE(), 'table') FROM (SUBQUERY)</option>
+            <option value="where_provenance" data-engine="provsql" {% if mode=='where_provenance' %}selected{% endif %}>
+                SELECT *, WHERE_PROVENANCE(...) FROM (SUBQUERY)</option>
+            <option value="probability" data-engine="provsql" {% if mode=='probability' %}selected{% endif %}>SELECT *,
+                SR_PROBABILITY (provenance, 'param1', 'opt-param2') FROM (SUBQUERY)</option>
+        </select><br><br>
+
+        <!-- Dynamic How To Use box -->
+        <div id="howto-box" style="
+            background-color:#eef6ff;
+            border:1px solid #cce0ff;
+            border-radius:6px;
+            padding:12px;
+            margin-top:10px;
+            margin-bottom:20px;
+            display:none;">
+            <h3 style="margin-top:0;color:#005bb5;">How to Use</h3>
+            <p id="howto-text" style="font-size:14px;color:#333;margin:0;"></p>
+        </div>
+
+        <div id="main-select-field">
+            <label for="query">SQL Query (Input):</label><br>
+            <textarea name="query" rows="5" cols="60">{{ query }}</textarea><br><br>
+        </div>
+
+        <div id="timestamp-field" style="display:none;">
+            <label for="timestamp">Timestamp (e.g., 2013-12-01 08:00:00):</label><br>
+            <input type="text" name="timestamp" value="{{ timestamp }}"><br><br>
+        </div>
+
+        <div id="baserelation-fields" style="display:none;">
+            <label for="main_select">Main SELECT statement:</label><br>
+            <textarea name="main_select" rows="4" cols="60">{{ main_select }}</textarea><br><br>
+
+            <label for="subquery">Subquery (inside parentheses):</label><br>
+            <textarea name="subquery" rows="6" cols="60">{{ subquery }}</textarea><br><br>
+
+            <label for="baserelation">BASERELATION AS alias:</label><br>
+            <input type="text" name="baserelation" value="{{ baserelation }}"><br><br>
+        </div>
+
+        <div id="has-provenance-field" style="display:none;">
+            <label for="has_attrs">HAS PROVENANCE Attributes (comma-separated):</label><br>
+            <input type="text" name="has_attrs" value="{{ has_attrs }}"><br><br>
+        </div>
+
+        <div id="use-provenance-field" style="display:none;">
+            <label for="use_attrs">USE PROVENANCE Attributes (comma-separated):</label><br>
+            <input type="text" name="use_attrs" value="{{ use_attrs }}"><br><br>
+        </div>
+
+        <div id="group_by_field" style="display:none;">
+            <label for="group_by_attrs">Group By (optional):</label><br>
+            <input type="text" id="group_by_attrs" name="group_by_attrs" value="{{ group_by_attrs }}"><br><br>
+        </div>
+
+        <div id="semirings-fields" style="display:none;">
+            <label for="semirings_table">Column name:</label><br>
+            <input type="text" name="semirings_table" value="{{ semirings_table }}"><br><br>
+
+            <label for="semirings_subquery">Subquery (inside parentheses):</label><br>
+            <textarea name="semirings_subquery" rows="6" cols="60">{{ semirings_subquery }}</textarea><br><br>
+
+            <div style="
+                background-color:#eef6ff;
+                border:1px solid #cce0ff;
+                border-radius:6px;
+                padding:12px;
+                margin-top:10px;
+                margin-bottom:20px;">
+                <h3 style="margin-top:0;color:#005bb5;">View Circuit (Optional)</h3>
+                <p style="font-size:14px;color:#333;margin:0;">
+                    View Circuit shows the provenance computation graph (Boolean circuit) for a specific query result. <br>
+                    Example Input: '7ee5d09a-1f67-5e0f-94f2-357218ae0dcc' <br>
+                    Column Input: 'name'
+                </p>
+            </div>
+
+
+            <label for="view_uuid">UUID:</label><br>
+            <input type="text" name="view_uuid" value="{{ view_uuid }}"><br><br>
+
+            <label for="view_table">Column name:</label><br>
+            <input type="text" name="view_table" value="{{ view_table }}"><br><br>
+        </div>
+
+        <div id="where-provenance-fields" style="display:none;">
+            <label for="wp_subquery">Subquery for WHERE_PROVENANCE (input field only):</label><br>
+            <textarea name="wp_subquery" rows="4" cols="60">{{ wp_subquery }}</textarea><br><br>
+        </div>
+
+        <!-- PROBABILITY SEMIRINGS fields -->
+        <div id="probability-fields" style="display:none;">
+            <label for="prob_method"> Semiring fields ('param1', ['param2']):</label><br>
+            <input type="text" name="prob_method" value="{{ prob_method }}"><br><br>
+
+            <label for="prob_subquery">Subquery for probability:</label><br>
+            <textarea name="prob_subquery" rows="4" cols="60">{{ prob_subquery }}</textarea><br><br>
+        </div>
+
+        <input type="submit" name="action" value="Run Query">
+        <input type="submit" name="action" value="Generate Image" style="display:none;">
+        <input type="submit" name="action" value="View Circuit" style="display:none;">
+    </form>
+
+    {% if full_query %}
+    <h2>Final Executed Query:</h2>
+    <pre>{{ full_query }}</pre>
+    {% if raw_output and action == "View Circuit" %}
+    <pre id="raw-output" class="{% if not (engine == 'provsql' and mode == 'semirings') %}hidden{% endif %}">{{ raw_output }}</pre>
+    {% endif %}
+    {% endif %}
+
+    {% if result %}
+    <h2>Output:</h2>
+
+    {% if result_type == "table" and columns and result %}
+    <div class="table-container" style="overflow-x:auto; max-width:100%; margin-top:10px;">
+        <table id="resultTable" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; width:100%;">
+            <thead style="background:#f0f0f0;">
+                <tr>
+                    {% for col in columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    {% for col in columns %}
+                    <th><input class="filter" onkeyup="filterTable()" placeholder="Filter {{ col }}" style="width:95%; padding:4px;"></th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in result %}
+                <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% else %}
+    <pre>{{ result }}</pre>
+    {% endif %}
+    {% endif %}
+
+
+    <div id="pagination-controls" style="margin-top:10px; font-family: monospace;">
+        <button id="prev-btn" onclick="changePage(-1)">&#60;</button>
+        <span id="page-info">1/1</span>
+        <button id="next-btn" onclick="changePage(1)">&#62;</button>
+    </div>
+
+    {% if chart_labels and chart_values %}
+    <h2>Tuple Occurrences Bar Chart</h2>
+    <div style="overflow-x:auto; width:100%;">
+        <canvas id="barChart" height="400"></canvas>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const ctx = document.getElementById('barChart').getContext('2d');
+        const barChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: {{ chart_labels| tojson }},
+        datasets: [{
+            label: 'Number of Occurrences',
+            data: {{ chart_values| tojson }},
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1
+                }]
+            },
+        options: {
+            indexAxis: 'x',  // Use 'y' for horizontal bars if preferred
+                responsive: true,
+                    maintainAspectRatio: false,
+                        scales: {
+                x: {
+                    ticks: {
+                        maxRotation: 90,
+                            minRotation: 45,
+                                autoSkip: true
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                        ticks: {
+                        precision: 0
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true
+                },
+                tooltip: {
+                    enabled: true
+                }
+            }
+        }
+        });
+    </script>
+    {% endif %}
+    {% if action == "Generate Image" %}
+    <h2>Generated Provenance Graph:</h2>
+    {% if engine == "provsql" %}
+    <img src="{{ url_for('static', filename='prov_graph_plus.png') }}" alt="ProvSQL Provenance Graph"
+        style="max-width:100%; border:1px solid #ccc; border-radius:6px;">
+    {% else %}
+    <img src="{{ url_for('static', filename='output.png') }}" alt="GProM Provenance Graph"
+        style="max-width:100%; border:1px solid #ccc; border-radius:6px;">
+    {% endif %}
+    {% endif %}
+    <script>
+        function filterTable() {
+            const filters = Array.from(document.querySelectorAll('.filter')).map(f => f.value.toLowerCase());
+            const rows = document.querySelectorAll('#resultTable tbody tr');
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                const show = filters.every((f, i) => !f || cells[i].textContent.toLowerCase().includes(f));
+                row.style.display = show ? '' : 'none';
+            });
+        }
+    </script>
+    <script>
+        const rowsPerPage = 20;
+        let currentPage = 1;
+
+        function paginateTable() {
+            const table = document.getElementById('resultTable');
+            if (!table) return;
+
+            const rows = Array.from(table.querySelectorAll('tbody tr'));
+            const totalPages = Math.ceil(rows.length / rowsPerPage);
+
+            rows.forEach((row, index) => {
+                row.style.display = (index >= (currentPage - 1) * rowsPerPage && index < currentPage * rowsPerPage) ? '' : 'none';
+            });
+
+            // Update page info
+            document.getElementById('page-info').innerText = `${currentPage}/${totalPages}`;
+
+            // Disable buttons if needed
+            document.getElementById('prev-btn').disabled = currentPage <= 1;
+            document.getElementById('next-btn').disabled = currentPage >= totalPages;
+        }
+
+        function changePage(delta) {
+            const table = document.getElementById('resultTable');
+            if (!table) return;
+
+            const rows = table.querySelectorAll('tbody tr');
+            const totalPages = Math.ceil(rows.length / rowsPerPage);
+
+            currentPage = Math.min(Math.max(currentPage + delta, 1), totalPages);
+            paginateTable();
+        }
+    </script>
+
+</body>
+
+</html>
